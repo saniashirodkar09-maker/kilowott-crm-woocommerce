@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopConnect CRM</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">S</div><div><strong>ShopConnect</strong><small>CRM WORKSPACE</small></div></div>
+      <div class="nav-label">WORKSPACE</div>
+      <button class="nav-item active" data-view="overview"><span>▦</span> Overview</button>
+      <button class="nav-item" data-view="customers"><span>♙</span> Customers</button>
+      <button class="nav-item" data-view="orders"><span>▣</span> Orders</button>
+      <button class="nav-item" data-view="tickets"><span>✉</span> Support tickets</button>
+      <button class="nav-item" data-view="assistant"><span>✧</span> AI support assistant</button>
+      <div class="sidebar-bottom"><div class="avatar">SS</div><div><strong>Support Admin</strong><small>Hackathon demo</small></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar"><div><span class="eyebrow">CUSTOMER OPERATIONS</span><h1 id="page-title">Overview</h1></div><div class="top-actions"><span id="mode-badge" class="mode-badge">Checking connection…</span><button class="btn btn-primary" id="sync-btn">↻ Sync store</button></div></header>
+      <div id="notice" class="notice hidden"></div>
+
+      <section id="view-overview" class="view">
+        <div class="welcome"><div><span class="eyebrow light">YOUR CUSTOMER HUB</span><h2>Good work starts with knowing your customers.</h2><p>Customer records, orders and support cases in one workspace.</p></div><div class="welcome-icon">✦</div></div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-top"><span>Total customers</span><span class="stat-icon">♙</span></div><strong id="stat-customers">—</strong><small>Customer records available</small></div>
+          <div class="stat-card"><div class="stat-top"><span>Total orders</span><span class="stat-icon">▣</span></div><strong id="stat-orders">—</strong><small>Orders available to review</small></div>
+          <div class="stat-card"><div class="stat-top"><span>Open tickets</span><span class="stat-icon">✉</span></div><strong id="stat-tickets">0</strong><small>Cases needing follow-up</small></div>
+          <div class="stat-card"><div class="stat-top"><span>High priority</span><span class="stat-icon">⚑</span></div><strong id="stat-high">0</strong><small>Tickets requiring attention</small></div>
+        </div>
+        <div class="content-grid">
+          <div class="panel"><div class="panel-heading"><div><h3>Recent orders</h3><p>Latest orders available in the connected store</p></div><button class="text-btn" data-goto="orders">View all →</button></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>CUSTOMER</th><th>DATE</th><th>STATUS</th><th>TOTAL</th></tr></thead><tbody id="recent-orders"></tbody></table></div></div>
+          <div class="panel quick-panel"><div class="panel-heading"><div><h3>Quick actions</h3><p>Move a customer issue forward</p></div></div><button class="quick-action" data-goto="customers"><span class="quick-icon">♙</span><span><strong>Find a customer</strong><small>Search profiles and order history</small></span><b>→</b></button><button class="quick-action" data-goto="tickets"><span class="quick-icon">✉</span><span><strong>Create a support ticket</strong><small>Record and prioritise an issue</small></span><b>→</b></button><button class="quick-action" data-goto="assistant"><span class="quick-icon">✧</span><span><strong>Analyse a complaint</strong><small>Get a summary and suggested reply</small></span><b>→</b></button><div class="tip"><strong>Demo tip</strong><p>Use the sample complaint “My order was delivered but I never received it” to demonstrate the support assistant.</p></div></div>
+        </div>
+      </section>
+
+      <section id="view-customers" class="view hidden">
+        <div class="section-intro"><div><h2>Customers</h2><p>Search customer profiles and review their orders.</p></div><input id="customer-search" class="search-input" placeholder="Search name or email…"></div>
+        <div class="panel"><div class="table-wrap"><table><thead><tr><th>CUSTOMER</th><th>EMAIL</th><th>PHONE</th><th>ORDERS</th><th>ACTION</th></tr></thead><tbody id="customers-table"></tbody></table></div></div>
+        <div id="customer-detail" class="panel detail-panel hidden"></div>
+      </section>
+
+      <section id="view-orders" class="view hidden">
+        <div class="section-intro"><div><h2>Orders</h2><p>Review order status and customer links.</p></div><select id="order-filter" class="search-input"><option value="all">All statuses</option><option>processing</option><option>completed</option><option>on-hold</option><option>cancelled</option><option>pending</option><option>refunded</option></select></div>
+        <div class="panel"><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>CUSTOMER</th><th>ITEM</th><th>DATE</th><th>STATUS</th><th>TOTAL</th></tr></thead><tbody id="orders-table"></tbody></table></div></div>
+      </section>
+
+      <section id="view-tickets" class="view hidden">
+        <div class="section-intro"><div><h2>Support tickets</h2><p>Record, prioritise and follow up customer concerns.</p></div><button class="btn btn-primary" id="new-ticket-btn">＋ New ticket</button></div>
+        <div id="ticket-form" class="panel hidden"><div class="panel-heading"><div><h3>Create ticket</h3><p>Link the issue to a customer or order when possible.</p></div></div><form id="create-ticket-form" class="form-grid"><label>Customer name<input name="customer" required placeholder="e.g. Aarav Naik"></label><label>Order ID (optional)<input name="orderId" placeholder="e.g. 5001"></label><label class="full">Subject<input name="subject" required placeholder="Short description of the issue"></label><label class="full">Description<textarea name="description" required rows="3" placeholder="What happened?"></textarea></label><label>Priority<select name="priority"><option>Low</option><option selected>Medium</option><option>High</option></select></label><label>Status<select name="status"><option>Open</option><option>In Progress</option><option>Resolved</option></select></label><div class="form-actions full"><button type="button" class="btn btn-secondary" id="cancel-ticket">Cancel</button><button class="btn btn-primary" type="submit">Save ticket</button></div></form></div>
+        <div id="tickets-list" class="ticket-list"></div>
+      </section>
+
+      <section id="view-assistant" class="view hidden">
+        <div class="assistant-layout"><div class="panel assistant-form"><div class="assistant-heading"><div class="assistant-logo">✧</div><div><h2>Support assistant</h2><p>Analyse a complaint and prepare a response for human review.</p></div></div><form id="assistant-form"><label>Order ID (optional)<input id="ai-order" placeholder="e.g. 5001"></label><label>Customer complaint<textarea id="ai-complaint" rows="5" required>My order was delivered but I never received it. I have already checked outside my house.</textarea></label><button class="btn btn-primary full-btn" type="submit">✧ Analyse complaint</button></form><p class="microcopy">Demo mode uses transparent keyword rules. It does not send customer data to an external AI service.</p></div>
+          <div class="panel result-panel"><div class="panel-heading"><div><h3>Analysis result</h3><p>Review before taking action</p></div><span class="status-dot"></span></div><div id="ai-empty" class="empty-state"><div class="empty-icon">✧</div><strong>Your analysis will appear here</strong><p>Submit a complaint to see its category, priority and suggested reply.</p></div><div id="ai-result" class="hidden"></div></div></div>
+        <div class="panel workflow-panel"><h3>Controlled agent workflow</h3><div class="workflow-steps"><div><span>1</span><strong>Understand</strong><small>Classify the complaint</small></div><div><span>2</span><strong>Recommend</strong><small>Suggest priority and reply</small></div><div><span>3</span><strong>Review</strong><small>Human checks the result</small></div><div><span>4</span><strong>Record</strong><small>Save an approved ticket</small></div></div></div>
+      </section>
+
+      <footer>ShopConnect CRM · Kilowott CRM Integration Hackathon · Prototype starter</footer>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
