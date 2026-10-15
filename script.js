@@ -1,151 +1,139 @@
-require("dotenv").config();
-const express = require("express");
-const path = require("path");
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+let customers = [], orders = [], tickets = JSON.parse(localStorage.getItem("shopconnect-tickets") || "[]");
+let lastAIResult = null;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-
-const demoCustomers = [
-  { id: 101, name: "Aarav Naik", email: "aarav@example.com", phone: "+91 90000 10001", ordersCount: 2 },
-  { id: 102, name: "Mira Kamat", email: "mira@example.com", phone: "+91 90000 10002", ordersCount: 1 },
-  { id: 103, name: "Rohan Dessai", email: "rohan@example.com", phone: "+91 90000 10003", ordersCount: 3 },
-  { id: 104, name: "Anaya Prabhu", email: "anaya@example.com", phone: "+91 90000 10004", ordersCount: 1 }
-];
-
-const demoOrders = [
-  { id: 5001, customer_id: 101, customer_name: "Aarav Naik", status: "processing", total: "₹1,499.00", date_created: "2026-10-14T10:15:00", line_items: [{ name: "Wireless Headphones", quantity: 1 }] },
-  { id: 5002, customer_id: 102, customer_name: "Mira Kamat", status: "completed", total: "₹899.00", date_created: "2026-10-13T12:30:00", line_items: [{ name: "Desk Lamp", quantity: 1 }] },
-  { id: 5003, customer_id: 103, customer_name: "Rohan Dessai", status: "on-hold", total: "₹2,199.00", date_created: "2026-10-12T09:10:00", line_items: [{ name: "Keyboard", quantity: 1 }] },
-  { id: 5004, customer_id: 101, customer_name: "Aarav Naik", status: "completed", total: "₹499.00", date_created: "2026-10-08T14:45:00", line_items: [{ name: "Mouse Pad", quantity: 1 }] },
-  { id: 5005, customer_id: 104, customer_name: "Anaya Prabhu", status: "cancelled", total: "₹699.00", date_created: "2026-10-07T16:20:00", line_items: [{ name: "Water Bottle", quantity: 1 }] }
-];
-
-function wcConfigured() {
-  return Boolean(process.env.WC_STORE_URL && process.env.WC_CONSUMER_KEY && process.env.WC_CONSUMER_SECRET);
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
 }
-
-async function wcGet(resource) {
-  const root = process.env.WC_STORE_URL.replace(/\/+$/, "");
-  const url = `${root}/wp-json/wc/v3/${resource}`;
-  const auth = Buffer.from(`${process.env.WC_CONSUMER_KEY}:${process.env.WC_CONSUMER_SECRET}`).toString("base64");
-  const response = await fetch(url, {
-    headers: { Authorization: `Basic ${auth}`, Accept: "application/json" }
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`WooCommerce returned ${response.status}: ${body.slice(0, 180)}`);
-  }
-  return response.json();
+function dateShort(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { day:"2-digit", month:"short", year:"numeric" });
 }
-
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true, mode: wcConfigured() ? "woocommerce-configured" : "demo-data", message: "ShopConnect CRM backend is running." });
-});
-
-app.get("/api/customers", async (req, res) => {
+function statusPill(status) {
+  const label = String(status || "unknown").replace(/-/g, " ");
+  return `<span class="pill ${esc(label.toLowerCase().replace(/\s+/g,"-"))}">${esc(label)}</span>`;
+}
+function notify(message, isError=false) {
+  const n = $("#notice");
+  n.textContent = message;
+  n.classList.toggle("error", isError);
+  n.classList.remove("hidden");
+  window.scrollTo({top:0, behavior:"smooth"});
+  setTimeout(() => n.classList.add("hidden"), 6500);
+}
+async function getJSON(url, options) {
+  const r = await fetch(url, options);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || data.error || `Request failed (${r.status})`);
+  return data;
+}
+async function loadData() {
   try {
-    if (wcConfigured()) {
-      const data = await wcGet("customers?per_page=100");
-      return res.json(data.map(c => ({
-        id: c.id, name: `${c.first_name || ""} ${c.last_name || ""}`.trim() || "Unnamed customer",
-        email: c.email || "", phone: c.billing?.phone || "", ordersCount: c.orders_count || 0
-      })));
-    }
-    res.json(demoCustomers);
-  } catch (error) {
-    res.status(502).json({ error: "Could not fetch WooCommerce customers.", detail: error.message });
+    const [health, c, o] = await Promise.all([getJSON("/api/health"), getJSON("/api/customers"), getJSON("/api/orders")]);
+    customers = c; orders = o;
+    $("#mode-badge").textContent = health.mode === "demo-data" ? "● Demo data" : "● WooCommerce connected";
+    $("#mode-badge").style.color = health.mode === "demo-data" ? "#a56a12" : "#16815e";
+    renderAll();
+  } catch (e) {
+    notify(`Could not load the dashboard: ${e.message}. Check that the server is running.`, true);
+    $("#mode-badge").textContent = "Connection error";
   }
+}
+function renderAll() {
+  $("#stat-customers").textContent = customers.length;
+  $("#stat-orders").textContent = orders.length;
+  $("#stat-tickets").textContent = tickets.filter(t => t.status !== "Resolved").length;
+  $("#stat-high").textContent = tickets.filter(t => t.priority === "High" && t.status !== "Resolved").length;
+  $("#recent-orders").innerHTML = orders.slice(0,5).map(o => `<tr><td><strong>#${esc(o.id)}</strong></td><td>${esc(o.customer_name || "Guest customer")}</td><td>${esc(dateShort(o.date_created))}</td><td>${statusPill(o.status)}</td><td>${esc(o.total)}</td></tr>`).join("") || emptyRow(5,"No orders found.");
+  renderCustomers(); renderOrders(); renderTickets();
+}
+function emptyRow(cols, text) { return `<tr><td colspan="${cols}" class="empty-row">${esc(text)}</td></tr>`; }
+function renderCustomers() {
+  const query = ($("#customer-search")?.value || "").toLowerCase();
+  const filtered = customers.filter(c => `${c.name} ${c.email} ${c.phone}`.toLowerCase().includes(query));
+  $("#customers-table").innerHTML = filtered.map(c => `<tr><td><span class="customer-name">${esc(c.name)}</span><span class="sub-cell">Customer #${esc(c.id)}</span></td><td>${esc(c.email)}</td><td>${esc(c.phone || "—")}</td><td>${esc(c.ordersCount ?? orders.filter(o=>String(o.customer_id)===String(c.id)).length)}</td><td><button class="table-action" data-customer="${esc(c.id)}">View profile</button></td></tr>`).join("") || emptyRow(5,"No matching customers.");
+}
+function renderOrders() {
+  const filter = $("#order-filter")?.value || "all";
+  const filtered = orders.filter(o => filter === "all" || o.status === filter);
+  $("#orders-table").innerHTML = filtered.map(o => {
+    const item = (o.line_items || []).map(i => `${i.name}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`).join(", ") || "—";
+    return `<tr><td><strong>#${esc(o.id)}</strong></td><td>${esc(o.customer_name || "Guest customer")}</td><td>${esc(item)}</td><td>${esc(dateShort(o.date_created))}</td><td>${statusPill(o.status)}</td><td>${esc(o.total)}</td></tr>`;
+  }).join("") || emptyRow(6,"No orders for this status.");
+}
+function renderTickets() {
+  $("#tickets-list").innerHTML = tickets.length ? tickets.slice().reverse().map(t => `<article class="ticket-card">
+    <div class="ticket-meta"><span class="ticket-id">${esc(t.id)} · ${esc(dateShort(t.createdAt))}</span>${statusPill(t.priority)}</div>
+    <h3>${esc(t.subject)}</h3><div class="ticket-customer">${esc(t.customer)} ${t.orderId ? `· Order #${esc(t.orderId)}` : ""}</div><p>${esc(t.description)}</p>
+    ${t.aiSummary ? `<div class="tip"><strong>AI assistance</strong><p>${esc(t.aiSummary)}</p></div>` : ""}
+    <div class="ticket-controls"><label>Status <select data-ticket-status="${esc(t.id)}">${["Open","In Progress","Resolved"].map(s=>`<option ${t.status===s?"selected":""}>${s}</option>`).join("")}</select></label><label>Priority <select data-ticket-priority="${esc(t.id)}">${["Low","Medium","High"].map(s=>`<option ${t.priority===s?"selected":""}>${s}</option>`).join("")}</select></label></div>
+  </article>`).join("") : `<div class="panel empty-state"><div class="empty-icon">✉</div><strong>No tickets yet</strong><p>Create a support ticket or analyse a complaint with the assistant.</p></div>`;
+  $("#stat-tickets").textContent = tickets.filter(t=>t.status!=="Resolved").length;
+  $("#stat-high").textContent = tickets.filter(t=>t.priority==="High" && t.status!=="Resolved").length;
+}
+function showView(name) {
+  $$(".view").forEach(v => v.classList.add("hidden"));
+  $(`#view-${name}`).classList.remove("hidden");
+  $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  $("#page-title").textContent = ({overview:"Overview",customers:"Customers",orders:"Orders",tickets:"Support tickets",assistant:"AI support assistant"})[name];
+}
+function saveTickets() { localStorage.setItem("shopconnect-tickets", JSON.stringify(tickets)); renderTickets(); }
+function openCustomer(id) {
+  const c = customers.find(x => String(x.id) === String(id));
+  if (!c) return;
+  const related = orders.filter(o => String(o.customer_id) === String(c.id));
+  const panel = $("#customer-detail");
+  panel.classList.remove("hidden");
+  panel.innerHTML = `<h3>${esc(c.name)} <span class="sub-cell">Customer #${esc(c.id)}</span></h3><div>${esc(c.email)} · ${esc(c.phone || "No phone provided")}</div><div class="detail-stats"><span><strong>${related.length}</strong> orders in loaded data</span><span><strong>${esc(c.ordersCount ?? related.length)}</strong> total orders reported</span></div><h3 style="margin-top:20px">Order history</h3><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>DATE</th><th>STATUS</th><th>TOTAL</th></tr></thead><tbody>${related.map(o=>`<tr><td>#${esc(o.id)}</td><td>${esc(dateShort(o.date_created))}</td><td>${statusPill(o.status)}</td><td>${esc(o.total)}</td></tr>`).join("") || emptyRow(4,"No orders linked to this customer in the loaded data.")}</tbody></table></div>`;
+  panel.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+$$(".nav-item").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
+$$("[data-goto]").forEach(b => b.addEventListener("click", () => showView(b.dataset.goto)));
+$("#customer-search").addEventListener("input", renderCustomers);
+$("#order-filter").addEventListener("change", renderOrders);
+$("#customers-table").addEventListener("click", e => { const b=e.target.closest("[data-customer]"); if(b) openCustomer(b.dataset.customer); });
+$("#sync-btn").addEventListener("click", async () => {
+  const b=$("#sync-btn"); b.disabled=true; b.textContent="Syncing…";
+  try { const result=await getJSON("/api/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); await loadData(); notify(result.message); }
+  catch(e){notify(e.message,true)}
+  finally{b.disabled=false;b.textContent="↻ Sync store"}
 });
-
-app.get("/api/orders", async (req, res) => {
-  try {
-    if (wcConfigured()) {
-      const [orders, customers] = await Promise.all([
-        wcGet("orders?per_page=100"),
-        wcGet("customers?per_page=100")
-      ]);
-      const customerMap = new Map(customers.map(c => [c.id, `${c.first_name || ""} ${c.last_name || ""}`.trim() || c.email || "Guest customer"]));
-      return res.json(orders.map(o => ({
-        id: o.id, customer_id: o.customer_id,
-        customer_name: customerMap.get(o.customer_id) || o.billing?.email || "Guest customer",
-        status: o.status, total: `${o.currency || ""} ${o.total || "0"}`.trim(),
-        date_created: o.date_created, line_items: (o.line_items || []).map(item => ({ name: item.name, quantity: item.quantity }))
-      })));
-    }
-    res.json(demoOrders);
-  } catch (error) {
-    res.status(502).json({ error: "Could not fetch WooCommerce orders.", detail: error.message });
-  }
+$("#new-ticket-btn").addEventListener("click",()=>$("#ticket-form").classList.toggle("hidden"));
+$("#cancel-ticket").addEventListener("click",()=>$("#ticket-form").classList.add("hidden"));
+$("#create-ticket-form").addEventListener("submit",e=>{
+  e.preventDefault(); const f=new FormData(e.currentTarget);
+  const ticket={id:`T-${Date.now().toString().slice(-7)}`,customer:f.get("customer").trim(),orderId:f.get("orderId").trim(),subject:f.get("subject").trim(),description:f.get("description").trim(),priority:f.get("priority"),status:f.get("status"),createdAt:new Date().toISOString()};
+  tickets.push(ticket);saveTickets();e.currentTarget.reset();$("#ticket-form").classList.add("hidden");notify(`Ticket ${ticket.id} created successfully.`);showView("tickets");
 });
-
-app.post("/api/sync", async (req, res) => {
-  if (!wcConfigured()) {
-    return res.json({
-      ok: true, mode: "demo-data",
-      message: "Demo mode is active. Add WC_STORE_URL, WC_CONSUMER_KEY and WC_CONSUMER_SECRET to .env to sync a real WooCommerce store."
-    });
-  }
-  try {
-    const [customers, orders] = await Promise.all([
-      wcGet("customers?per_page=100"),
-      wcGet("orders?per_page=100")
-    ]);
-    res.json({ ok: true, mode: "woocommerce-configured", customersFetched: customers.length, ordersFetched: orders.length, message: "Fetched current records from WooCommerce. This starter displays them live; persistent database sync is a next step." });
-  } catch (error) {
-    res.status(502).json({ ok: false, error: "Sync failed. Check the store URL, API keys, permissions and network.", detail: error.message });
-  }
+$("#tickets-list").addEventListener("change",e=>{
+  const id=e.target.dataset.ticketStatus||e.target.dataset.ticketPriority;if(!id)return;
+  const ticket=tickets.find(t=>t.id===id);if(!ticket)return;
+  if(e.target.dataset.ticketStatus)ticket.status=e.target.value;else ticket.priority=e.target.value;
+  saveTickets();notify(`Ticket ${id} updated.`);
 });
-
-app.get("/api/orders/:id", async (req, res) => {
-  try {
-    if (wcConfigured()) {
-      const o = await wcGet(`orders/${encodeURIComponent(req.params.id)}`);
-      return res.json(o);
-    }
-    const order = demoOrders.find(o => String(o.id) === String(req.params.id));
-    if (!order) return res.status(404).json({ error: "Order not found in demo data." });
-    res.json(order);
-  } catch (error) {
-    res.status(502).json({ error: "Could not fetch order.", detail: error.message });
-  }
+$("#assistant-form").addEventListener("submit",async e=>{
+  e.preventDefault(); const button=e.currentTarget.querySelector("button");button.disabled=true;button.textContent="Analysing…";
+  try{
+    const result=await getJSON("/api/ai-assist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({complaint:$("#ai-complaint").value,orderId:$("#ai-order").value})});
+    lastAIResult={...result,complaint:$("#ai-complaint").value,orderId:$("#ai-order").value};
+    renderAI(lastAIResult);
+  }catch(err){notify(err.message,true)}
+  finally{button.disabled=false;button.textContent="✧ Analyse complaint"}
 });
-
-app.post("/api/ai-assist", (req, res) => {
-  const complaint = String(req.body.complaint || "").trim();
-  const orderId = String(req.body.orderId || "").trim();
-  if (!complaint) return res.status(400).json({ error: "Please enter a customer complaint." });
-
-  const text = complaint.toLowerCase();
-  let category = "General enquiry";
-  if (/refund|return|money back|reimburse/.test(text)) category = "Refund / return";
-  else if (/damaged|broken|cracked|defective/.test(text)) category = "Damaged product";
-  else if (/wrong item|incorrect item|wrong product/.test(text)) category = "Wrong item";
-  else if (/late|delay|delayed|not arrived|delivery|tracking|delivered but|never received|missing/.test(text)) category = "Delivery issue";
-
-  const urgent = /never received|not received|delivered but|fraud|charged twice|damaged|urgent|three days|3 days/.test(text);
-  const priority = urgent ? "High" : (/refund|return|late|delay|delayed|tracking/.test(text) ? "Medium" : "Low");
-  const summary = `Customer reported a ${category.toLowerCase()}${orderId ? ` related to order #${orderId}` : ""}. Review the order details and confirm the next step with the customer.`;
-  const reply = category === "Delivery issue"
-    ? "We're sorry your delivery has not gone as expected. We will review the latest order status and investigate the issue. Our support team will update you as soon as we have confirmed information."
-    : category === "Refund / return"
-    ? "We're sorry for the inconvenience. We will review your order and the applicable return/refund details, then let you know the next steps."
-    : category === "Damaged product"
-    ? "We're sorry your item arrived damaged. Please share a photo if possible, and we will review the order and help with the available resolution."
-    : "Thank you for contacting us. We have recorded your concern and our support team will review it and get back to you.";
-
-  res.json({
-    mode: "rule-based-demo",
-    category, priority, summary, suggestedReply: reply,
-    proposedAction: priority === "High" ? "Flag for human review and prioritise the ticket." : "Add to the support queue for review.",
-    requiresHumanApproval: true,
-    notice: "This starter uses transparent demo rules, not a live generative AI model. Describe it accurately in your presentation."
+function renderAI(r){
+  $("#ai-empty").classList.add("hidden");$("#ai-result").classList.remove("hidden");
+  $("#ai-result").innerHTML=`<div class="result-block"><div class="result-label">ISSUE CATEGORY</div><div class="result-value"><strong>${esc(r.category)}</strong></div></div>
+  <div class="result-block"><div class="result-label">SUGGESTED PRIORITY</div>${statusPill(r.priority)} <span class="sub-cell">${esc(r.proposedAction)}</span></div>
+  <div class="result-block"><div class="result-label">COMPLAINT SUMMARY</div><div class="result-value">${esc(r.summary)}</div></div>
+  <div class="result-block"><div class="result-label">SUGGESTED REPLY · HUMAN REVIEW REQUIRED</div><div class="result-value">${esc(r.suggestedReply)}</div></div>
+  <div class="tip"><strong>Transparency</strong><p>${esc(r.notice)}</p></div>
+  <div class="result-actions"><button class="btn btn-primary" id="create-ai-ticket">Create ticket from analysis</button><button class="btn btn-secondary" id="copy-ai-reply">Copy suggested reply</button></div>`;
+  $("#create-ai-ticket").addEventListener("click",()=>{
+    const t={id:`T-${Date.now().toString().slice(-7)}`,customer:"Customer to confirm",orderId:r.orderId,subject:r.category,description:r.complaint,priority:r.priority,status:"Open",createdAt:new Date().toISOString(),aiSummary:r.summary};
+    tickets.push(t);saveTickets();notify(`Ticket ${t.id} created. Confirm the customer identity before taking action.`);showView("tickets");
   });
-});
-
-app.listen(PORT, () => {
-  console.log(`ShopConnect CRM running at http://localhost:${PORT}`);
-  console.log(`Mode: ${wcConfigured() ? "WooCommerce integration configured" : "demo data (no store credentials needed)"}`);
-});
+  $("#copy-ai-reply").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(r.suggestedReply);notify("Suggested reply copied. Review it before sending.");}catch{notify("Clipboard unavailable. Select and copy the suggested reply manually.",true)}});
+}
+loadData();
